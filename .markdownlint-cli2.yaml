@@ -1,0 +1,15 @@
+# markdownlint-cli2 configuration — mirrors the pi_config source-of-truth
+# repo's style: long-form prose and wide tables are intentional.
+config:
+  default: true
+  MD013: false   # line-length
+  MD041: false   # first-line-heading
+  MD060: false   # table-column-style
+  MD024:
+    siblings_only: true   # no-duplicate-heading
+
+globs:
+  - "**/*.md"
+
+ignores:
+  - "node_modules/**"
