@@ -23,7 +23,7 @@
 		"typebox": ">=1"
 	},
 	"devDependencies": {
-		"@earendil-works/pi-coding-agent": "0.79.3",
+		"@earendil-works/pi-coding-agent": "0.79.10",
 		"@types/node": "^25.9.3",
 		"tsx": "^4.19.2",
 		"typescript": "^6.0.3",
