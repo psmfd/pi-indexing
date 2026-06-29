@@ -7,6 +7,14 @@ meaning — returning `file:line` snippets — instead of reading whole files, a
 keeps the index fresh with an idle-gated background re-index. See
 [ADR-0033](https://github.com/psmfd/pi-config/blob/main/adrs/0033-codebase-indexing.md).
 
+## Install
+
+```sh
+pi install git:github.com/psmfd/pi-indexing
+```
+
+Try it first without installing: `pi -e git:github.com/psmfd/pi-indexing`.
+
 ## Why custom (not an adopted extension)
 
 Phase 0 (#328) named two candidate extensions; both were rejected on inspection
