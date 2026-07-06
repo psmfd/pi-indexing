@@ -1,3 +1,3 @@
 source_repo: psmfd/pi_config
-source_sha: 3e117cd035569685e1c5154cd090880d54593ca2
+source_sha: 5d260ef1e431c556fec4e9228cc2d5169009e403
 synced_by: scripts/sync-mirror.sh (ADR-0050)
