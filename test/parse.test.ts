@@ -46,11 +46,25 @@ test("classifyOutput -> results when blocks are present (even on exit 0)", () =>
   assert.equal(c.results.length, 2);
 });
 
-test("classifyOutput -> not-initialized on the ccc banner (exit 0)", () => {
+test("classifyOutput -> not-initialized with pi remediation first", () => {
   const banner = "Error: Not in an initialized project directory.\nRun `ccc init`...";
   const c = classifyOutput(banner, 0);
   assert.equal(c.kind, "not-initialized");
+  assert.ok(c.message.includes("/index build"));
   assert.ok(c.message.includes("ccc init"));
+  assert.ok(c.message.indexOf("/index build") < c.message.indexOf("ccc init"));
+  assert.equal(c.results.length, 0);
+});
+
+// Some ccc failures put the actionable initialization diagnostic on stderr while
+// stdout is empty. The tool should still surface the pi-native remediation path
+// instead of collapsing to the generic "ccc search exited 1".
+test("classifyOutput -> not-initialized from stderr global settings failure", () => {
+  const stderr = "Error: Global settings not found: /home/user/.cocoindex_code/global_settings.yml\nRun `ccc init` to create it with default settings.";
+  const c = classifyOutput("", 1, undefined, stderr);
+  assert.equal(c.kind, "not-initialized");
+  assert.ok(c.message.includes("/index build"));
+  assert.ok(c.message.indexOf("/index build") < c.message.indexOf("ccc init"));
   assert.equal(c.results.length, 0);
 });
 

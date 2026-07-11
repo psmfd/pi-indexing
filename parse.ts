@@ -47,15 +47,18 @@ export function classifyOutput(
   stdout: string,
   code: number | null,
   spawnError?: string,
+  stderr = "",
 ): ClassifiedOutput {
   if (spawnError) {
     return { kind: "error", results: [], message: spawnError };
   }
-  if (/^Error: Not in an initialized project/m.test(stdout)) {
+  const combinedDiagnostics = `${stdout}\n${stderr}`;
+  if (/^Error: Not in an initialized project/m.test(combinedDiagnostics) || /^Error: Global settings not found:/m.test(combinedDiagnostics)) {
     return {
       kind: "not-initialized",
       results: [],
-      message: "the project is not indexed — run `ccc init && ccc index` (or /index build)",
+      message:
+        "the project is not indexed — in pi, run `/index build`; if first-time ccc setup is still missing, run `ccc init` once and then `/index build` again",
     };
   }
   const results = parseSearchResults(stdout);

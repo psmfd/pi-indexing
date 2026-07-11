@@ -50,7 +50,10 @@ every suite convention by design.
 | `CCC_BIN_PATH` | Absolute path to the `ccc` binary (else `$PIPX_BIN_DIR/ccc`, else `~/.local/bin/ccc`). |
 
 The search tool is **always** registered; `enabled` governs only the background
-re-index.
+re-index. If `search_codebase` reports that the project is not indexed, prefer
+the built-in `/index build` path from pi; on a brand-new host, run `ccc init`
+once if `/index build` reports that first-time ccc setup is still missing, then
+run `/index build` again.
 
 ## Setup (external toolchain)
 

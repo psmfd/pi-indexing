@@ -200,7 +200,7 @@ export default function indexing(pi: ExtensionAPI): void {
       }
       if (run.spawnError) return refusal(run.spawnError);
 
-      const classified = classifyOutput(run.stdout, run.code, run.spawnError);
+      const classified = classifyOutput(run.stdout, run.code, run.spawnError, run.stderr);
       if (classified.kind === "error" || classified.kind === "not-initialized") {
         return refusal(classified.message);
       }
