@@ -16,7 +16,7 @@ import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 
-import type { CommandResult, DetachedProcess, RunOptions } from "./types.ts";
+import type { CommandResult, CommandRunner, DetachedProcess, RunOptions } from "./types.ts";
 
 /** Resolve the `ccc` binary: CCC_BIN_PATH, else PIPX_BIN_DIR/ccc, else ~/.local/bin/ccc. */
 export function resolveBinary(env: NodeJS.ProcessEnv): string {
@@ -91,7 +91,7 @@ const CHILD_ENV_ALLOWLIST: ReadonlyArray<string> = [
  * Build the subprocess env: the allowlisted passthrough vars plus the fixed
  * flags that suppress Rich ANSI/spinners and CocoIndex telemetry.
  */
-function childEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+export function childEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const out: NodeJS.ProcessEnv = {};
   for (const key of CHILD_ENV_ALLOWLIST) {
     const val = env[key];
@@ -113,7 +113,7 @@ export function parseCccVersion(stdout: string): string | null {
 }
 
 /** Real search runner: spawn `ccc`, capture output, honor timeout + abort signal. */
-export const defaultRunner = (
+export const defaultRunner: CommandRunner = (
   command: string,
   args: ReadonlyArray<string>,
   options: RunOptions,
@@ -196,6 +196,48 @@ export const defaultLauncher = (
     },
   };
 };
+
+/**
+ * Best-effort probe of the `transformers` version installed in the ccc pipx
+ * venv, via `pipx runpip cocoindex-code show transformers`. Returns the raw
+ * `pip show` stdout, or null on ANY failure (pipx absent, package missing,
+ * spawn error, timeout, non-zero exit) — the caller treats null as "cannot
+ * determine" and stays silent, so this never blocks or false-warns. Reuses the
+ * same secret-stripping childEnv() as the ccc spawns; pipx is NOT `ccc`, so this
+ * is the one spawn that does not route through assertCliInvocation (it launches
+ * pipx, never the cocoindex-code MCP entry point).
+ */
+export const defaultTransformersProbe = (
+  env: NodeJS.ProcessEnv,
+  timeoutMs = 15_000,
+): Promise<string | null> =>
+  new Promise<string | null>((resolve) => {
+    let child;
+    try {
+      child = spawn("pipx", ["runpip", "cocoindex-code", "show", "transformers"], {
+        env: childEnv(env),
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch {
+      resolve(null);
+      return;
+    }
+    const out: Buffer[] = [];
+    let settled = false;
+    const done = (value: string | null): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+      done(null);
+    }, timeoutMs);
+    child.stdout?.on("data", (d: Buffer) => out.push(d));
+    child.on("error", () => done(null));
+    child.on("close", (code) => done(code === 0 ? bufStr(out) : null));
+  });
 
 function bufStr(parts: Buffer[]): string {
   return Buffer.concat(parts).toString("utf8");

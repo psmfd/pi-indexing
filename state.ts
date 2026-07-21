@@ -46,6 +46,13 @@ export async function load(agentDir?: string): Promise<IndexingState> {
     typeof loaded.maxResultChars === "number" && loaded.maxResultChars > 0
       ? Math.trunc(loaded.maxResultChars)
       : DEFAULT_STATE.maxResultChars;
+  // `enabled` fails SAFE, not to the default: a state.json that exists but whose
+  // `enabled` is missing or non-boolean coerces to false (autonomy OFF), the safe
+  // direction for a codebase-wide background scan. This is deliberately asymmetric
+  // with shared/state.ts's no-file / unparseable / version-mismatch path, which
+  // returns the full default-ON DEFAULT_STATE — a well-formed file we can read but
+  // that omits the toggle is treated as an explicit "leave it off", not a fresh
+  // install. `firstRunNotified` coerces the same way for the same reason.
   return {
     enabled: loaded.enabled === true,
     maxResults,

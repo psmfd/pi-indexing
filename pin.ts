@@ -6,8 +6,23 @@
  * "pin" here is a verifiable record rather than a download manifest: the engine
  * version, the embedding-model HuggingFace revision + weights SHA-256 (the
  * trust-on-first-use gate the security review flagged), and the transformers
- * CVE floor (CVE-2026-4372). These constants mirror agent/vendor/cocoindex-code/
- * and are the single source the runtime checks against.
+ * CVE floor (CVE-2026-4372). These constants mirror agent/vendor/cocoindex-code/.
+ *
+ * Enforcement is split — read it precisely, do not assume all five are checked
+ * the same way:
+ *   - PINNED_CCC_VERSION       — checked at RUNTIME (index.ts `checkCccVersion`,
+ *                                warns on an installed-vs-pinned mismatch).
+ *   - MIN_TRANSFORMERS_VERSION — checked at RUNTIME (index.ts
+ *                                `checkTransformersFloor`, warns when the ccc pipx
+ *                                venv's transformers is below the CVE floor).
+ *   - MODEL_REVISION           — cross-checked by
+ *                                scripts/validate-cocoindex-code-vendor.sh against
+ *                                the README citation (a doc-consistency check, NOT
+ *                                a check of the actually-downloaded model).
+ *   - EMBEDDING_MODEL, MODEL_SAFETENSORS_SHA256 — recorded pins with no automated
+ *                                check yet; runtime re-verification of the
+ *                                downloaded model against the revision/hash is
+ *                                tracked in #821.
  */
 
 /** Pinned cocoindex-code (`ccc`) engine version. */

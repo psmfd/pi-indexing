@@ -15,18 +15,20 @@ import { execFileSync } from "node:child_process";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { defaultLauncher, defaultRunner, parseCccVersion, resolveBinary } from "./ccc.ts";
+import { defaultLauncher, defaultRunner, defaultTransformersProbe, parseCccVersion, resolveBinary } from "./ccc.ts";
 import { classifyOutput } from "./parse.ts";
-import { PINNED_CCC_VERSION } from "./pin.ts";
+import { MIN_TRANSFORMERS_VERSION, PINNED_CCC_VERSION } from "./pin.ts";
 import { Reindexer } from "./reindex.ts";
 import {
   buildSearchArgs,
   clampLimit,
   formatResultsForModel,
+  MAX_LIMIT,
   validateLangFilter,
   validatePathFilter,
 } from "./search.ts";
 import * as state from "./state.ts";
+import { evaluateTransformersFloor } from "./toolchain-check.ts";
 import type { CommandResult } from "./types.ts";
 
 const SEARCH_TIMEOUT_MS = 30_000;
@@ -83,6 +85,7 @@ export default function indexing(pi: ExtensionAPI): void {
   // the first event with a UI.
   let notify: ((message: string, level: "info" | "warning" | "error") => void) | null = null;
   let reindexErrorNotified = false;
+  let transformersFloorNotified = false;
   const onReindexError = (err: Error): void => {
     // Always log; notify the user once per session so a missing/broken ccc is not
     // silently retried on every agent_end with no signal (security review).
@@ -104,6 +107,28 @@ export default function indexing(pi: ExtensionAPI): void {
       if (installed && installed !== PINNED_CCC_VERSION && ctx.hasUI) {
         ctx.ui.notify(
           `indexing: ccc ${installed} is installed but ${PINNED_CCC_VERSION} is pinned — search output parsing may differ`,
+          "warning",
+        );
+      }
+    } catch {
+      // best-effort only
+    }
+  }
+
+  // Best-effort: warn ONCE if the transformers in the ccc pipx venv is below the
+  // CVE-2026-4372 security floor (config-injection RCE, fixed 5.3.0). Fail-open —
+  // silent when pipx/the package can't be probed (never blocks session_start, never
+  // false-warns). This is the runtime enforcement of pin.ts's MIN_TRANSFORMERS_VERSION.
+  async function checkTransformersFloor(ctx: ExtensionContext): Promise<void> {
+    if (transformersFloorNotified || !ctx.hasUI) return;
+    try {
+      const output = await defaultTransformersProbe(process.env, STATUS_TIMEOUT_MS);
+      const { installed, belowFloor } = evaluateTransformersFloor(output, MIN_TRANSFORMERS_VERSION);
+      if (belowFloor) {
+        transformersFloorNotified = true;
+        ctx.ui.notify(
+          `indexing: transformers ${installed} is below the ${MIN_TRANSFORMERS_VERSION} security floor ` +
+            `(CVE-2026-4372) — upgrade with: pipx runpip cocoindex-code install 'transformers>=${MIN_TRANSFORMERS_VERSION}'`,
           "warning",
         );
       }
@@ -141,6 +166,7 @@ export default function indexing(pi: ExtensionAPI): void {
     });
     showStatus(ctx, cfg.enabled || pi.getFlag("index") === true);
     void checkCccVersion(ctx);
+    void checkTransformersFloor(ctx);
   });
 
   pi.registerTool({
@@ -161,7 +187,7 @@ export default function indexing(pi: ExtensionAPI): void {
       limit: Type.Optional(
         Type.Number({
           description:
-            "Max results to request (1-25; default from config). The configured render cap may show fewer, " +
+            `Max results to request (1-${MAX_LIMIT}; default from config). The configured render cap may show fewer, ` +
             "noting how many were suppressed.",
         }),
       ),
