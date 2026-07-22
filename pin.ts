@@ -15,14 +15,18 @@
  *   - MIN_TRANSFORMERS_VERSION — checked at RUNTIME (index.ts
  *                                `checkTransformersFloor`, warns when the ccc pipx
  *                                venv's transformers is below the CVE floor).
- *   - MODEL_REVISION           — cross-checked by
+ *   - MODEL_REVISION           — checked at RUNTIME (#821: index.ts
+ *                                `checkModelPinOnce` via model-pin-check.ts reads
+ *                                the HF cache's refs/main and warns on drift from
+ *                                the pin), AND cross-checked by
  *                                scripts/validate-cocoindex-code-vendor.sh against
- *                                the README citation (a doc-consistency check, NOT
- *                                a check of the actually-downloaded model).
- *   - EMBEDDING_MODEL, MODEL_SAFETENSORS_SHA256 — recorded pins with no automated
- *                                check yet; runtime re-verification of the
- *                                downloaded model against the revision/hash is
- *                                tracked in #821.
+ *                                the README citation (doc consistency).
+ *   - MODEL_SAFETENSORS_SHA256 — checked at RUNTIME (#821: the resolved
+ *                                snapshot's model.safetensors is stream-hashed —
+ *                                actual bytes, not the blob symlink name — and
+ *                                compared when refs/main matches the pin).
+ *   - EMBEDDING_MODEL          — the identity the runtime checks key on; not
+ *                                itself verifiable (it names the pin's subject).
  */
 
 /** Pinned cocoindex-code (`ccc`) engine version. */

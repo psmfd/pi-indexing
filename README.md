@@ -91,11 +91,16 @@ revision + weights SHA-256 are recorded in [`pin.ts`](pin.ts) and mirrored under
   allowlisted env, never the agent session's secrets (`ANTHROPIC_API_KEY`,
   `GITHUB_TOKEN`, cloud creds).
 - **Pinned model + CVE floor.** The embedding model is pinned by HF revision +
-  weights SHA-256 (trust-on-first-use mitigation); the `transformers >= 5.3.0`
-  floor (CVE-2026-4372) is **enforced at runtime** — `session_start` warns once if
-  the ccc venv's transformers is below it. Telemetry is disabled
-  (`COCOINDEX_DISABLE_USAGE_TRACKING=1`). See [`pin.ts`](pin.ts) for which pins are
-  runtime-checked vs validator-checked.
+  weights SHA-256, and both are **re-verified at runtime** (#821): `session_start`
+  reads the HF hub cache's `refs/main` and warns once on drift from the pinned
+  revision, and — when the revision matches — stream-hashes the resolved
+  snapshot's `model.safetensors` (actual bytes, not the blob symlink name)
+  against the pinned SHA-256. Fail-open: an absent/never-downloaded model stays
+  silent; only a positively-detected mismatch warns. The `transformers >= 5.3.0`
+  floor (CVE-2026-4372) is likewise **enforced at runtime** — `session_start`
+  warns once if the ccc venv's transformers is below it. Telemetry is disabled
+  (`COCOINDEX_DISABLE_USAGE_TRACKING=1`). See [`pin.ts`](pin.ts) for the
+  per-constant enforcement map.
 
 ## Coexistence
 
@@ -185,10 +190,12 @@ flowchart LR
         idx --> ccc[ccc.ts]
         idx --> lstate[state.ts]
         idx --> tc[toolchain-check.ts]
+        idx --> mpc[model-pin-check.ts]
         idx --> pin[pin.ts]
     end
     lstate --> shared["../shared/state.ts — ADR-0065 inline:[state]"]
     ccc --> cccbin[["ccc CLI + local embedding model"]]
+    mpc --> hfcache[["HF hub cache — refs/main + snapshot weights"]]
     pin --> vendor["agent/vendor/cocoindex-code/ — VERSION, CHECKSUMS"]
     idx --> pisdk["@earendil-works/pi-coding-agent (ExtensionAPI)"]
     idx --> tb[typebox]
@@ -198,23 +205,25 @@ flowchart LR
 
 | File | Role |
 | --- | --- |
-| `index.ts` | Factory: tool + `/index` command + `--index` flag + `agent_end` re-index + `session_start` version/CVE-floor checks. |
+| `index.ts` | Factory: tool + `/index` command + `--index` flag + `agent_end` re-index + `session_start` version/CVE-floor/model-pin checks. |
 | `ccc.ts` | `ccc` subprocess boundary: binary resolution, no-MCP guard, secret-stripped env, runner + launcher + `transformers` probe. |
 | `parse.ts` | Parse + classify `ccc search` output (pure). |
 | `search.ts` | Query construction, `--path`/`--lang` validation, untrusted result framing (pure). |
 | `reindex.ts` | Idle-gated, single-flight, cooldown-throttled background re-index. |
 | `state.ts` | Persisted toggle + output caps (`shared/state.ts`). |
 | `toolchain-check.ts` | Pure evaluation of the `transformers` CVE floor against a probe result. |
+| `model-pin-check.ts` | Runtime re-verify of the downloaded embedding model (#821): HF cache-dir precedence, `refs/main` vs `MODEL_REVISION`, stream-SHA-256 of the resolved weights vs `MODEL_SAFETENSORS_SHA256`; fail-open. |
 | `pin.ts` | Pinned `ccc` version + embedding-model revision/SHA + transformers floor. |
 | `types.ts` | Structural types + injectable process boundaries. |
 
 ## Tests
 
-`scripts/test-indexing.sh` (also run by `validate.sh`) — **61 tests across 7
+`scripts/test-indexing.sh` (also run by `validate.sh`) — **74 tests across 8
 files**. No installed `ccc` is required: the pure modules import pi/typebox only as
-types, and the `index.ts` wiring test redirects state to a temp HOME and exercises
-the pre-spawn refusal paths (it does import `index.ts`, so the runner hydrates
-extension-deps for `typebox`, ADR-0021).
+types, the model-pin suite builds a fake HF hub cache in a temp dir (pointed at
+via `HF_HUB_CACHE`), and the `index.ts` wiring test redirects state to a temp HOME
+and exercises the pre-spawn refusal paths (it does import `index.ts`, so the
+runner hydrates extension-deps for `typebox`, ADR-0021).
 
 | Suite | Tests | Covers |
 | --- | --- | --- |
@@ -222,6 +231,7 @@ extension-deps for `typebox`, ADR-0021).
 | `parse.test.ts` | 12 | block parsing (incl. embedded-header hardening), output classification |
 | `ccc.test.ts` | 10 | binary resolution, no-MCP guard, version parse, secret-stripping `childEnv` |
 | `reindex.test.ts` | 8 | gate ladder, single-flight, cooldown, lock reset on failure |
+| `model-pin-check.test.ts` | 13 | HF cache-dir precedence, fail-open pin evaluation table, fake-cache probe (drift / corrupted weights / absent model) |
 | `toolchain-check.test.ts` | 7 | `transformers` version parse/compare, fail-open CVE-floor eval |
 | `index.test.ts` | 6 | tool/command/flag registration, refusal paths, first-run once-gate |
 | `state.test.ts` | 5 | default + cap repair + fail-safe coercion |

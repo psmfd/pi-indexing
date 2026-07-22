@@ -16,8 +16,15 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 
 import { defaultLauncher, defaultRunner, defaultTransformersProbe, parseCccVersion, resolveBinary } from "./ccc.ts";
+import { checkModelPin } from "./model-pin-check.ts";
 import { classifyOutput } from "./parse.ts";
-import { MIN_TRANSFORMERS_VERSION, PINNED_CCC_VERSION } from "./pin.ts";
+import {
+  EMBEDDING_MODEL,
+  MIN_TRANSFORMERS_VERSION,
+  MODEL_REVISION,
+  MODEL_SAFETENSORS_SHA256,
+  PINNED_CCC_VERSION,
+} from "./pin.ts";
 import { Reindexer } from "./reindex.ts";
 import {
   buildSearchArgs,
@@ -86,6 +93,7 @@ export default function indexing(pi: ExtensionAPI): void {
   let notify: ((message: string, level: "info" | "warning" | "error") => void) | null = null;
   let reindexErrorNotified = false;
   let transformersFloorNotified = false;
+  let modelPinNotified = false;
   const onReindexError = (err: Error): void => {
     // Always log; notify the user once per session so a missing/broken ccc is not
     // silently retried on every agent_end with no signal (security review).
@@ -137,6 +145,28 @@ export default function indexing(pi: ExtensionAPI): void {
     }
   }
 
+  // Best-effort: warn ONCE if the downloaded embedding model no longer matches
+  // the pin.ts identity pins (#821) — refs/main revision drift, or (worse)
+  // weights whose actual bytes don't hash to MODEL_SAFETENSORS_SHA256 at the
+  // pinned revision. Fail-open — silent when the HF cache/model is absent or
+  // unreadable (never blocks session_start, never false-warns); this is the
+  // runtime enforcement of pin.ts's MODEL_REVISION + MODEL_SAFETENSORS_SHA256.
+  async function checkModelPinOnce(ctx: ExtensionContext): Promise<void> {
+    if (modelPinNotified || !ctx.hasUI) return;
+    try {
+      const { warning } = await checkModelPin(process.env, EMBEDDING_MODEL, {
+        revision: MODEL_REVISION,
+        safetensorsSha256: MODEL_SAFETENSORS_SHA256,
+      });
+      if (warning) {
+        modelPinNotified = true;
+        ctx.ui.notify(warning, "warning");
+      }
+    } catch {
+      // best-effort only
+    }
+  }
+
   // Reconstructed in session_start once the git root is known; this initial
   // instance covers the unlikely case of agent_end firing first.
   let reindexer = new Reindexer({
@@ -167,6 +197,7 @@ export default function indexing(pi: ExtensionAPI): void {
     showStatus(ctx, cfg.enabled || pi.getFlag("index") === true);
     void checkCccVersion(ctx);
     void checkTransformersFloor(ctx);
+    void checkModelPinOnce(ctx);
   });
 
   pi.registerTool({
